@@ -35,6 +35,16 @@ export default function get_renderer(
   // ===============================================
 
   const nulling_data = new Uint32Array([0]);
+  // vertices per quad, quad count, first vertex, first instance
+  const indirect_draw_buffer = createBuffer(
+    device,
+    'indirect draw',
+    16,
+    GPUBufferUsage.INDIRECT | GPUBufferUsage.COPY_DST,
+
+    // six vertices make two triangles
+    new Uint32Array([6, pc.num_points, 0, 0]),
+  );
 
   // ===============================================
   //    Create Compute Pipeline and Bind Groups
@@ -67,7 +77,35 @@ export default function get_renderer(
   // ===============================================
   //    Create Render Pipeline and Bind Groups
   // ===============================================
-  
+  const gaussian_shader = device.createShaderModule({ code: renderWGSL });
+  const gaussian_pipeline = device.createRenderPipeline({
+    label: 'gaussian render',
+    layout: 'auto',
+    vertex: {
+      module: gaussian_shader,
+      entryPoint: 'vs_main',
+    },
+    fragment: {
+      module: gaussian_shader,
+      entryPoint: 'fs_main',
+      targets: [{ format: presentation_format }],
+    },
+    primitive: {
+      topology: 'triangle-list',
+    },
+  });
+
+  const render_camera_bind_group = device.createBindGroup({
+    label: 'gaussian camera',
+    layout: gaussian_pipeline.getBindGroupLayout(0),
+    entries: [{ binding: 0, resource: { buffer: camera_buffer } }],
+  });
+
+  const gaussian_bind_group = device.createBindGroup({
+    label: 'gaussian points',
+    layout: gaussian_pipeline.getBindGroupLayout(1),
+    entries: [{ binding: 0, resource: { buffer: pc.gaussian_3d_buffer } }],
+  });
 
   // ===============================================
   //    Command Encoder Functions
@@ -80,6 +118,24 @@ export default function get_renderer(
   return {
     frame: (encoder: GPUCommandEncoder, texture_view: GPUTextureView) => {
       sorter.sort(encoder);
+
+      const pass = encoder.beginRenderPass({
+        label: 'gaussian render',
+        colorAttachments: [
+          {
+            view: texture_view,
+            clearValue: [0, 0, 0, 1],
+            loadOp: 'clear',
+            storeOp: 'store',
+          },
+        ],
+      });
+      
+      pass.setPipeline(gaussian_pipeline);
+      pass.setBindGroup(0, render_camera_bind_group);
+      pass.setBindGroup(1, gaussian_bind_group);
+      pass.drawIndirect(indirect_draw_buffer, 0);
+      pass.end();
     },
     camera_buffer,
   };
