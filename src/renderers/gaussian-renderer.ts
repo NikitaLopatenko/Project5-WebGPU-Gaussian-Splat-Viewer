@@ -103,6 +103,7 @@ export default function get_renderer(
     entries: [
       { binding: 0, resource: { buffer: pc.gaussian_3d_buffer } },
       { binding: 1, resource: { buffer: splat_buffer } },
+      { binding: 2, resource: { buffer: pc.sh_buffer } }
     ],
   });
 
@@ -111,7 +112,10 @@ export default function get_renderer(
     label: 'sort',
     layout: preprocess_pipeline.getBindGroupLayout(2),
     entries: [
-      { binding: 0, resource: { buffer: sorter.sort_info_buffer } }, // only 0 because does not read the other sort buffers yet
+      { binding: 0, resource: { buffer: sorter.sort_info_buffer } }, // visiable keys
+      { binding: 1, resource: { buffer: sorter.ping_pong[0].sort_depths_buffer } }, // depth keys
+      { binding: 2, resource: { buffer: sorter.ping_pong[0].sort_indices_buffer } },
+      { binding: 3, resource: { buffer: sorter.sort_dispatch_indirect_buffer } }
     ],
   });
 
@@ -146,7 +150,10 @@ export default function get_renderer(
   const gaussian_bind_group = device.createBindGroup({
     label: 'gaussian points',
     layout: gaussian_pipeline.getBindGroupLayout(1),
-    entries: [{ binding: 0, resource: { buffer: splat_buffer } }],
+    entries: [
+      { binding: 0, resource: { buffer: splat_buffer } },
+      { binding: 1, resource: { buffer: sorter.ping_pong[0].sort_indices_buffer } } // those sorted indices
+    ],
   });
 
   // ===============================================
@@ -183,6 +190,13 @@ export default function get_renderer(
         nulling_data
       );
 
+      // we reset sorting dispatch too so we do not allocate mroe workgroups
+      device.queue.writeBuffer(
+        sorter.sort_dispatch_indirect_buffer,
+        0,
+        nulling_data
+      );
+
       preprocess(encoder);
 
       // copy how many we kept into the draw call
@@ -194,7 +208,7 @@ export default function get_renderer(
         4
       );
 
-      // sorter.sort(encoder);
+      sorter.sort(encoder);
 
       const pass = encoder.beginRenderPass({
         label: 'gaussian render',

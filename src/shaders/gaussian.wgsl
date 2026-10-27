@@ -15,6 +15,7 @@ struct Gaussian {
 
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
+    @location(0) color: vec4<f32>
     //TODO: information passed from vertex shader to fragment shader
 };
 
@@ -33,6 +34,8 @@ var<uniform> camera: CameraUniforms;
 
 @group(1) @binding(0)
 var<storage, read> splats: array<Splat>;
+@group(1) @binding(1)
+var<storage, read> sort_indices: array<u32>;
 
 
 
@@ -44,7 +47,8 @@ fn vs_main(
 
     //TODO: reconstruct 2D quad based on information from splat, pass 
 
-    let splat = splats[instance_index];
+    let sorted_splat_index = sort_indices[instance_index];
+    let splat = splats[sorted_splat_index];
 
     // two triangles around the center
     var corner = array<vec2<f32>, 6>(
@@ -67,10 +71,12 @@ fn vs_main(
         1.0
     );
 
+    out.color = splat.color;
+
     return out;
 }
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    return vec4<f32>(1.);
+    return in.color;
 }
