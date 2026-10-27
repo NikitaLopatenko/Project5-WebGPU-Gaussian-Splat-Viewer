@@ -13,14 +13,6 @@ struct Gaussian {
     scale: array<u32,2>
 }
 
-@group(0) @binding(0)
-var<uniform> camera: CameraUniforms;
-
-@group(1) @binding(0)
-var<storage, read> gaussians: array<Gaussian>;
-
-
-
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
     //TODO: information passed from vertex shader to fragment shader
@@ -35,6 +27,15 @@ struct Splat {
     color: vec4<f32>,
 };
 
+
+@group(0) @binding(0)
+var<uniform> camera: CameraUniforms;
+
+@group(1) @binding(0)
+var<storage, read> splats: array<Splat>;
+
+
+
 @vertex
 fn vs_main(
     @builtin(vertex_index) vertex_index: u32,
@@ -43,12 +44,7 @@ fn vs_main(
 
     //TODO: reconstruct 2D quad based on information from splat, pass 
 
-    let gaussian = gaussians[instance_index];
-
-    // gaussian becomes small screen quad
-    let xy = unpack2x16float(gaussian.pos_opacity[0]);
-    let z_opacity = unpack2x16float(gaussian.pos_opacity[1]);
-    var clip_pos = camera.proj * camera.view * vec4<f32>(xy.x, xy.y, z_opacity.x, 1.0);
+    let splat = splats[instance_index];
 
     // two triangles around the center
     var corner = array<vec2<f32>, 6>(
@@ -60,11 +56,17 @@ fn vs_main(
         vec2<f32>( 1.0,  1.0),
     );
 
-    clip_pos.x += corner[vertex_index].x * 0.005 * clip_pos.w;
-    clip_pos.y += corner[vertex_index].y * 0.005 * clip_pos.w;
+    // pixel radius to NDC size
+    let half_size_ndc = splat.half_size_pixels * 2.0 / camera.viewport; //multiply by 2 because it is the size of NDC
 
     var out: VertexOutput;
-    out.position = clip_pos;
+
+    out.position = vec4<f32>(
+        splat.center + corner[vertex_index] * half_size_ndc,
+        0.0,
+        1.0
+    );
+
     return out;
 }
 

@@ -57,9 +57,26 @@ struct Gaussian {
 
 struct Splat {
     //TODO: store information for 2D splat rendering
+    center: vec2<f32>,
+    half_size_pixels: vec2<f32>,
+    conic: vec3<f32>,
+    opacity: f32,
+    color: vec4<f32>,
 };
 
 //TODO: bind your data here
+
+@group(0) @binding(0)
+var<uniform> camera: CameraUniforms;
+@group(0) @binding(1)
+var<uniform> render_settings: RenderSettings;
+
+
+@group(1) @binding(0)
+var<storage, read> gaussians: array<Gaussian>;
+@group(1) @binding(1)
+var<storage, read_write> splats: array<Splat>;
+
 @group(2) @binding(0)
 var<storage, read_write> sort_infos: SortInfos;
 @group(2) @binding(1)
@@ -112,6 +129,39 @@ fn computeColorFromSH(dir: vec3<f32>, v_idx: u32, sh_deg: u32) -> vec3<f32> {
 fn preprocess(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(num_workgroups) wgs: vec3<u32>) {
     let idx = gid.x;
     //TODO: set up pipeline as described in instruction
+
+    // extra threads leave
+    if (idx >= arrayLength(&gaussians)) {
+        return;
+    }
+
+    // packed f16 values become xyz and opacity
+    let gaussian = gaussians[idx];
+    let xy = unpack2x16float(gaussian.pos_opacity[0]);
+    let z_opacity = unpack2x16float(gaussian.pos_opacity[1]);
+    let world_pos = vec4<f32>(xy.x, xy.y, z_opacity.x, 1.0);
+
+    // world position to screen position
+    let clip_pos = camera.proj * camera.view * world_pos;
+    if (clip_pos.w <= 0.0) {
+        return;
+    }
+    let ndc_pos = clip_pos.xyz / clip_pos.w;
+
+    // slightly larger box to keep splats near edges
+    if (abs(ndc_pos.x) > 1.2 || abs(ndc_pos.y) > 1.2 || ndc_pos.z < 0.0 || ndc_pos.z > 1.0) {
+        return;
+    }
+
+    // each visible gaussian gets the next free splat slot
+    let visible_splat_index = atomicAdd(&sort_infos.keys_size, 1u);
+
+    // now we made it through multiplier
+    splats[visible_splat_index].center = ndc_pos.xy;
+
+    let square_radius_pixels = 5.0 * render_settings.gaussian_scaling;
+    splats[visible_splat_index].half_size_pixels = vec2<f32>(square_radius_pixels, square_radius_pixels);
+
 
     let keys_per_dispatch = workgroupSize * sortKeyPerThread; 
     // increment DispatchIndirect.dispatchx each time you reach limit for one dispatch of keys
