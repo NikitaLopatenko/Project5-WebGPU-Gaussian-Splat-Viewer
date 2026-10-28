@@ -15,7 +15,10 @@ struct Gaussian {
 
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
-    @location(0) color: vec4<f32>
+    @location(0) color: vec4<f32>,
+    @location(1) pixel_offset: vec2<f32>,
+    @location(2) conic: vec3<f32>,
+    @location(3) opacity: f32
     //TODO: information passed from vertex shader to fragment shader
 };
 
@@ -73,10 +76,37 @@ fn vs_main(
 
     out.color = splat.color;
 
+    // pixel offset from the center of the quad with x with minus for the conic convention
+    out.pixel_offset = vec2<f32>(-corner[vertex_index].x, corner[vertex_index].y) * splat.half_size_pixels;
+
+    out.conic = splat.conic;
+    out.opacity = splat.opacity;
+
     return out;
 }
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    return in.color;
+
+    let pixel_difference = in.pixel_offset;
+
+    let gaussian_power = -0.5 * (
+        in.conic.x * pixel_difference.x * pixel_difference.x + //Ax^2
+        2.0 * in.conic.y * pixel_difference.x * pixel_difference.y + //2Bxy
+        in.conic.z * pixel_difference.y * pixel_difference.y //Cy^2
+    );
+
+    // for correct covariance should not happen
+    if (gaussian_power > 0.0) {
+        discard;
+    }
+
+    let gaussian_alpha = min(0.99, in.opacity * exp(gaussian_power)); // opacity gets smaller exponentially
+
+    // throw away basically invisible splats
+    if (gaussian_alpha < 1.0 / 255.0) {
+        discard;
+    }
+
+    return vec4<f32>(in.color.rgb, gaussian_alpha);
 }

@@ -18,6 +18,8 @@ const SH_C3 = array<f32,7>(
 );
 
 override workgroupSize: u32;
+override sortWorkgroupSize: u32;
+
 override sortKeyPerThread: u32;
 
 struct DispatchIndirect {
@@ -343,7 +345,7 @@ fn preprocess(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(num_workgr
     sort_indices[visible_splat_index] = visible_splat_index;
 
 
-    let keys_per_dispatch = workgroupSize * sortKeyPerThread;
+    let keys_per_dispatch = sortWorkgroupSize * sortKeyPerThread;
 
     // each sorting workgroup can process keys_per_dispatch splats
     if (visible_splat_index % keys_per_dispatch == 0u) {

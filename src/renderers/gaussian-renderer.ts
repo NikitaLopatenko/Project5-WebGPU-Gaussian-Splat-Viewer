@@ -29,6 +29,9 @@ export default function get_renderer(
 ): GaussianRenderer {
 
   const sorter = get_sorter(pc.num_points, device);
+
+  const preprocess_workgroup_size = 128;
+
   
   // ===============================================
   //            Initialize GPU Buffers
@@ -80,8 +83,9 @@ export default function get_renderer(
       module: device.createShaderModule({ code: preprocessWGSL }),
       entryPoint: 'preprocess',
       constants: {
-        workgroupSize: C.histogram_wg_size,
-        sortKeyPerThread: c_histogram_block_rows,
+        workgroupSize: preprocess_workgroup_size,
+        sortWorkgroupSize: C.histogram_wg_size,
+        sortKeyPerThread: c_histogram_block_rows
       },
     },
   });
@@ -134,7 +138,25 @@ export default function get_renderer(
     fragment: {
       module: gaussian_shader,
       entryPoint: 'fs_main',
-      targets: [{ format: presentation_format }],
+      targets: [
+        {
+          format: presentation_format,
+          blend: {
+            // mix this splat color with all the stuff behind it
+            color: {
+              srcFactor: 'src-alpha',
+              dstFactor: 'one-minus-src-alpha',
+              operation: 'add',
+            },
+            // combine opacity of the splat with all the opacity behind it
+            alpha: {
+              srcFactor: 'one',
+              dstFactor: 'one-minus-src-alpha',
+              operation: 'add',
+            },
+          },
+        },
+      ],
     },
     primitive: {
       topology: 'triangle-list',
@@ -170,7 +192,7 @@ export default function get_renderer(
     compute_pass.setBindGroup(1, preprocess_data_bind_group);
     compute_pass.setBindGroup(2, sort_bind_group);
   
-    const workgroup_count = Math.ceil(pc.num_points / C.histogram_wg_size);
+    const workgroup_count = Math.ceil(pc.num_points / preprocess_workgroup_size);
 
     compute_pass.dispatchWorkgroups(workgroup_count);
     compute_pass.end();
